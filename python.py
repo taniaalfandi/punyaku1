@@ -178,5 +178,5 @@ if __name__ == '__main__':
     threading.Thread(target=check_pending_deletes, daemon=True).start()
     
     # Set webhook and run Flask app
-    bot.set_webhook(f"https://your-heroku-app.herokuapp.com/{BOT_TOKEN}")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    bot.set_webhook(f"https://punyaku1-7616b4589109.herokuapp.com/{BOT_TOKEN}")
+    app.run(host="2.7.0.1", port=int(os.environ.get("PORT", 8080)))
