@@ -16,9 +16,9 @@ load_dotenv()
 BOT_TOKEN = "8198025806:AAFlgK3acg0UYo7HdJdO0cULAokYTgS0Rt0"
 API_ID = 27342258
 API_HASH = "df1d220364ecb7ac56d29152d194e14f"
-ADMIN_IDS = [123456789]  # Replace with your admin ID
+ADMIN_IDS = [1580687565]  # Replace with your admin ID
 AUTO_DELETE_TIME = 60  # Seconds before auto-deleting messages
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
+MONGODB_URI = os.getenv("MONGODB_URI", "mongodb+srv://upinputra30:RoOsNOLn8kDv8Vv8@upinputra.lzwpkfr.mongodb.net/?retryWrites=true&w=majority&appName=upinputra")
 
 # Initialize MongoDB
 client = MongoClient(MONGODB_URI)
