@@ -1,86 +1,96 @@
 import os
+import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.exceptions import MessageToDeleteNotFound
+from config import BOT_TOKEN, CHANNEL_ID
 from database import *
-from config import BOT_TOKEN, ADMINS
 
 bot = Bot(token=BOT_TOKEN)
-storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
+dp = Dispatcher(bot)
 
-# ===== HANDLER UTAMA =====
+# ===== BASIC COMMANDS =====
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
-    user_id = message.from_user.id
-    username = message.from_user.username
-    add_user(user_id, username)
-    await message.reply("🎉 Selamat datang di File Store Bot!")
+    add_user(message.from_user.id, message.from_user.username)
+    await message.reply("📁 Welcome to File Store Bot!")
 
-# ===== FITUR PREMIUM =====
-@dp.message_handler(commands=['addpremium'])
-async def add_premium_cmd(message: types.Message):
-    if message.from_user.id not in ADMINS:
-        return await message.reply("❌ Hanya Admin!")
-    args = message.get_args().split()
-    if len(args) != 2:
-        return await message.reply("Format: /addpremium <user_id> <expiry_date>")
-    user_id, expiry = int(args[0]), args[1]
-    add_premium(user_id, expiry)
-    await message.reply(f"✅ User {user_id} sekarang Premium hingga {expiry}!")
-
-@dp.message_handler(commands=['delpremium'])
-async def del_premium_cmd(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return await message.reply("❌ Hanya Admin!")
-    user_id = int(message.get_args())
-    delete_premium(user_id)
-    await message.reply(f"✅ User {user_id} dihapus dari Premium!")
-
-# ===== FITUR ADMIN =====
+# ===== ADMIN TOOLS =====
 @dp.message_handler(commands=['addadmin'])
 async def add_admin_cmd(message: types.Message):
-    if message.from_user.id not in ADMINS:
-        return await message.reply("❌ Hanya Owner!")
-    user_id = int(message.get_args())
-    add_admin(user_id)
-    await message.reply(f"✅ User {user_id} sekarang Admin!")
+    if not is_admin(message.from_user.id):
+        return await message.reply("❌ Admin only!")
+    try:
+        user_id = int(message.get_args())
+        add_admin(user_id)
+        await message.reply(f"✅ Added admin: {user_id}")
+    except:
+        await message.reply("Usage: /addadmin <user_id>")
 
-@dp.message_handler(commands=['deladmin'])
-async def del_admin_cmd(message: types.Message):
-    if message.from_user.id not in ADMINS:
-        return await message.reply("❌ Hanya Owner!")
-    user_id = int(message.get_args())
-    delete_admin(user_id)
-    await message.reply(f"✅ User {user_id} dihapus dari Admin!")
+# ===== PREMIUM SYSTEM =====
+@dp.message_handler(commands=['addpremium'])
+async def add_premium_cmd(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return await message.reply("❌ Admin only!")
+    try:
+        args = message.get_args().split()
+        user_id, days = int(args[0]), int(args[1])
+        add_premium(user_id, days)
+        await message.reply(f"⭐ User {user_id} is now premium for {days} days!")
+    except:
+        await message.reply("Usage: /addpremium <user_id> <days>")
 
-# ===== FITUR FILE STORE =====
+# ===== FILE HANDLING =====
 @dp.message_handler(content_types=types.ContentType.DOCUMENT)
 async def handle_file(message: types.Message):
-    user_id = message.from_user.id
     file_id = message.document.file_id
     file_name = message.document.file_name
-    save_file(file_id, file_name, "document", user_id)
-    await message.reply("📁 File berhasil disimpan!")
+    
+    # Forward to channel
+    channel_msg = await bot.send_document(
+        chat_id=CHANNEL_ID,
+        document=file_id,
+        caption=f"Uploaded by: @{message.from_user.username}"
+    )
+    
+    # Save to DB
+    save_file(file_id, file_name, message.from_user.id)
+    
+    # Generate link
+    file_link = f"https://t.me/c/{str(CHANNEL_ID)[4:]}/{channel_msg.message_id}"
+    await message.reply(f"🔗 Your file link:\n{file_link}")
 
-@dp.message_handler(commands=['batch_delete'])
-async def batch_delete(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return await message.reply("❌ Hanya Admin!")
-    file_ids = message.get_args().split()
-    delete_files(file_ids)
-    await message.reply(f"🗑️ {len(file_ids)} file dihapus!")
+# ===== BATCH LINK GENERATOR =====
+@dp.message_handler(commands=['batchlinks'])
+async def batch_links(message: types.Message):
+    if not is_premium(message.from_user.id):
+        return await message.reply("❌ Premium feature!")
+    
+    recent_files = get_file_links(10)
+    if not recent_files:
+        return await message.reply("No files found!")
+    
+    links = [
+        f"https://t.me/c/{str(CHANNEL_ID)[4:]}/{f['channel_msg_id']}"
+        for f in recent_files
+    ]
+    
+    await message.reply("🔗 Recent files:\n" + "\n".join(links))
 
-# ===== AUTO DELETE MESSAGE =====
-@dp.message_handler(commands=['autodelete'])
+# ===== AUTO DELETE =====
+@dp.message_handler(commands=['autodel'])
 async def auto_delete(message: types.Message):
     if not is_admin(message.from_user.id):
-        return await message.reply("❌ Hanya Admin!")
-    seconds = int(message.get_args())
-    await message.delete()
-    reply = await message.reply(f"⚠ Pesan ini akan dihapus dalam {seconds} detik!")
-    await asyncio.sleep(seconds)
-    await reply.delete()
+        return await message.reply("❌ Admin only!")
+    
+    try:
+        sec = int(message.get_args())
+        msg = await message.reply(f"🗑 This message will self-destruct in {sec}s...")
+        await asyncio.sleep(sec)
+        await msg.delete()
+    except:
+        await message.reply("Usage: /autodel <seconds>")
 
 if __name__ == '__main__':
     from aiogram import executor
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp)
