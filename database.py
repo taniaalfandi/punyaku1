@@ -1,51 +1,56 @@
 from pymongo import MongoClient
-from config import MONGO_URI, DB_NAME
+from datetime import datetime, timedelta
+from config import MONGO_URI, DB_NAME, CHANNEL_ID
 
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 
 users = db.users
 files = db.files
-premium_users = db.premium_users
+premium = db.premium
 admins = db.admins
 
+# User Management
 def add_user(user_id: int, username: str):
     users.update_one(
         {"user_id": user_id},
-        {"$set": {"username": username}},
+        {"$set": {"username": username, "joined_at": datetime.now()}},
         upsert=True
     )
 
-def add_premium(user_id: int, expiry_date: str):
-    premium_users.update_one(
+# Premium Features
+def add_premium(user_id: int, days: int):
+    expiry = datetime.now() + timedelta(days=days)
+    premium.update_one(
         {"user_id": user_id},
-        {"$set": {"expiry": expiry_date}},
+        {"$set": {"expiry": expiry}},
         upsert=True
     )
-
-def delete_premium(user_id: int):
-    premium_users.delete_one({"user_id": user_id})
-
-def add_admin(user_id: int):
-    admins.insert_one({"user_id": user_id})
-
-def delete_admin(user_id: int):
-    admins.delete_one({"user_id": user_id})
 
 def is_premium(user_id: int) -> bool:
-    return premium_users.find_one({"user_id": user_id}) is not None
+    user = premium.find_one({"user_id": user_id})
+    return user and user["expiry"] > datetime.now()
+
+# Admin Control
+def add_admin(user_id: int):
+    admins.update_one(
+        {"user_id": user_id},
+        {"$set": {"is_admin": True}},
+        upsert=True
+    )
 
 def is_admin(user_id: int) -> bool:
-    return admins.find_one({"user_id": user_id}) is not None
+    return admins.find_one({"user_id": user_id}) or user_id in ADMINS
 
-def save_file(file_id: str, file_name: str, file_type: str, uploader_id: int):
+# File Storage
+def save_file(file_id: str, file_name: str, uploader_id: int):
     files.insert_one({
         "file_id": file_id,
         "file_name": file_name,
-        "file_type": file_type,
         "uploader_id": uploader_id,
+        "channel_msg_id": None,
         "timestamp": datetime.now()
     })
 
-def delete_files(file_ids: list):
-    files.delete_many({"file_id": {"$in": file_ids}})
+def get_file_links(limit=10):
+    return list(files.find().sort("timestamp", -1).limit(limit))
